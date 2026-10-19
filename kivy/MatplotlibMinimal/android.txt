@@ -1,0 +1,3 @@
+title=Matplotlib test
+author=Yo
+orientation=landscape

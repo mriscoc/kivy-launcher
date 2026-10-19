@@ -201,17 +201,40 @@ class Launcher(App):
         Intent = autoclass("android.content.Intent")
         String = autoclass("java.lang.String")
 
-        j_entrypoint = String(entry.get("entrypoint"))
-        j_orientation = String(entry.get("orientation"))
+        entrypoint = entry.get("entrypoint", "")
+        orientation = entry.get("orientation", "")
+
+        # Persist the entrypoint to a file so the new process can read it
+        # even if the Intent extras are lost during process restart.
+        # This is necessary because FLAG_ACTIVITY_CLEAR_TASK destroys the
+        # current task before Android can deliver the new Intent extras to
+        # a living instance.
+        try:
+            android_private = os.environ.get('ANDROID_PRIVATE', '')
+            entrypoint_file = join(android_private, '.launcher_entrypoint')
+            with open(entrypoint_file, 'w', encoding='utf-8') as f:
+                f.write(f"{entrypoint}\n{orientation}")
+            self.log(f'wrote entrypoint file: {entrypoint_file}')
+        except Exception:
+            self.log(traceback.format_exc())
 
         self.log('creating intent')
         intent = Intent(
             activity.getApplicationContext(),
             PythonActivity
         )
-        intent.putExtra("entrypoint", j_entrypoint)
-        intent.putExtra("orientation", j_orientation)
-        self.log(f'ready to start intent {j_entrypoint} {j_orientation}')
+        # FLAG_ACTIVITY_NEW_TASK  (0x10000000): required when starting from
+        # a non-Activity context.
+        # FLAG_ACTIVITY_CLEAR_TASK (0x00008000): completely destroys the
+        # existing task so Android is forced to start a brand-new process
+        # instead of routing the intent to the living instance via
+        # onNewIntent (which is what CLEAR_TOP does when the activity is
+        # the task root, causing System.exit to kill the process before
+        # the new script ever runs).
+        intent.setFlags(0x10000000 | 0x00008000)
+        intent.putExtra("entrypoint", String(entrypoint))
+        intent.putExtra("orientation", String(orientation))
+        self.log(f'ready to start intent {entrypoint} {orientation}')
         activity.startActivity(intent)
         self.log('activity started')
         System.exit(0)
